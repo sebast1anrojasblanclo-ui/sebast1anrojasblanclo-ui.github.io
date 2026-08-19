@@ -1,0 +1,258 @@
+#include <Servo.h>
+
+// ===============================
+// PINES
+// ===============================
+const int POTENCIOMETRO = A0;
+const int SERVO_PIN = 6;
+const int LED_VERDE = 7;
+const int LED_ROJO = 8;
+const int BUZZER = 9;
+const int BOTON = 2;
+
+// ===============================
+// CONFIGURACION
+// ===============================
+
+// Rango simulado de presión arterial
+const float PRESION_MIN = 80.0;
+const float PRESION_MAX = 130.0;
+
+// Referencia del sistema
+const float REFERENCIA = 100.0;
+
+// Servo
+Servo actuador;
+
+int anguloActual = 0;
+int anguloObjetivo = 0;
+
+// Temporizadores
+unsigned long tiempoServo = 0;
+unsigned long tiempoMonitor = 0;
+
+
+// ===============================
+// SETUP
+// ===============================
+void setup() {
+
+  Serial.begin(9600);
+
+  pinMode(LED_VERDE, OUTPUT);
+  pinMode(LED_ROJO, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
+
+  // Botón conectado entre D2 y GND
+  pinMode(BOTON, INPUT_PULLUP);
+
+  actuador.attach(SERVO_PIN);
+
+  // Estado inicial
+  actuador.write(0);
+
+  digitalWrite(LED_VERDE, HIGH);
+  digitalWrite(LED_ROJO, LOW);
+
+  noTone(BUZZER);
+
+  Serial.println("===============================");
+  Serial.println(" BAUMANOMETRO DIGITAL");
+  Serial.println(" PROTOTIPO DE CONTROL");
+  Serial.println("===============================");
+  Serial.println();
+}
+
+
+// ===============================
+// LOOP
+// ===============================
+void loop() {
+
+  // ==================================
+  // 1. LEER POTENCIOMETRO
+  // ==================================
+
+  int lecturaADC = analogRead(POTENCIOMETRO);
+
+
+  // Convertir ADC 0-1023 a 80-130 mmHg
+  float presion =
+    PRESION_MIN +
+    ((float)lecturaADC / 1023.0) *
+    (PRESION_MAX - PRESION_MIN);
+
+
+  // ==================================
+  // 2. CALCULAR ERROR
+  // ==================================
+
+  float error = presion - REFERENCIA;
+
+
+  // ==================================
+  // 3. ACCION DE CONTROL
+  // ==================================
+
+  float accion = 0.0;
+
+  // Solamente actuamos si la presión
+  // supera los 100 mmHg
+  if (error > 0) {
+
+    // 20 mmHg por encima = 100 %
+    accion = error / 20.0;
+  }
+
+
+  // ==================================
+  // 4. SATURACION ENTRE 0 Y 1
+  // ==================================
+
+  if (accion > 1.0) {
+    accion = 1.0;
+  }
+
+  if (accion < 0.0) {
+    accion = 0.0;
+  }
+
+
+  // ==================================
+  // 5. POSICION DEL SERVO
+  // ==================================
+
+  // Acción:
+  //
+  // 0.00 =   0 grados
+  // 0.25 =  30 grados
+  // 0.50 =  60 grados
+  // 0.75 =  90 grados
+  // 1.00 = 120 grados
+
+  anguloObjetivo = accion * 120;
+
+
+  // ==================================
+  // 6. MOVER SERVO LENTAMENTE
+  // ==================================
+
+  if (millis() - tiempoServo >= 25) {
+
+    tiempoServo = millis();
+
+    if (anguloActual < anguloObjetivo) {
+
+      anguloActual++;
+
+    }
+
+    else if (anguloActual > anguloObjetivo) {
+
+      anguloActual--;
+
+    }
+
+    actuador.write(anguloActual);
+  }
+
+
+  // ==================================
+  // 7. LEDS Y BUZZER
+  // ==================================
+
+  if (presion <= REFERENCIA) {
+
+    // PRESION NORMAL
+
+    digitalWrite(LED_VERDE, HIGH);
+    digitalWrite(LED_ROJO, LOW);
+
+    noTone(BUZZER);
+
+  }
+
+  else {
+
+    // PRESION ELEVADA
+
+    digitalWrite(LED_VERDE, LOW);
+    digitalWrite(LED_ROJO, HIGH);
+
+    tone(BUZZER, 1000);
+  }
+
+
+  // ==================================
+  // 8. BOTON RESET
+  // ==================================
+
+  if (digitalRead(BOTON) == LOW) {
+
+    anguloActual = 0;
+    anguloObjetivo = 0;
+
+    actuador.write(0);
+
+    digitalWrite(LED_VERDE, HIGH);
+    digitalWrite(LED_ROJO, LOW);
+
+    noTone(BUZZER);
+
+    Serial.println();
+    Serial.println(">>> SISTEMA REINICIADO <<<");
+    Serial.println();
+
+    delay(300);
+  }
+
+
+  // ==================================
+  // 9. MONITOR SERIAL
+  // ==================================
+
+  if (millis() - tiempoMonitor >= 500) {
+
+    tiempoMonitor = millis();
+
+    Serial.println("-------------------------------");
+
+    Serial.print("ADC: ");
+    Serial.println(lecturaADC);
+
+    Serial.print("PAM: ");
+    Serial.print(presion, 1);
+    Serial.println(" mmHg");
+
+    Serial.print("Referencia: ");
+    Serial.print(REFERENCIA, 1);
+    Serial.println(" mmHg");
+
+    Serial.print("Error: ");
+    Serial.print(error, 1);
+    Serial.println(" mmHg");
+
+    Serial.print("Accion: ");
+    Serial.print(accion * 100.0, 0);
+    Serial.println(" %");
+
+    Serial.print("Servo: ");
+    Serial.print(anguloActual);
+    Serial.println(" grados");
+
+
+    if (presion <= REFERENCIA) {
+
+      Serial.println("ESTADO: NORMAL");
+
+    }
+
+    else {
+
+      Serial.println("ESTADO: PRESION ALTA");
+
+    }
+
+    Serial.println("-------------------------------");
+  }
+}
